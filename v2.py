@@ -491,6 +491,10 @@ async def register_cmd(ctx, email: str, password: str):
 # =========================
 # Manage group (client API)
 # =========================
+import aiohttp, discord, random, os
+from discord.ext import commands
+
+bot = commands.Bot(command_prefix="*", intents=discord.Intents.all())
 
 DB_FILE = "manage_db.txt"
 
