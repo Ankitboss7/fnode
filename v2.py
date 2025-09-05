@@ -534,7 +534,21 @@ async def manage(ctx, token: str = None):
             description="Use the buttons below to control your server.",
             color=discord.Color.green()
         )
-        await ctx.send(embed=embed, view=ManageServerView(token, sid))
+        await ctx.send(embed=embed, view=ManageServerView(token, sid)
+
+# -------------------- GET SERVER INTERNAL ID --------------------
+async def get_server_internal_id(identifier):
+    url = "https://panel.fluidmc.fun/api/application/servers"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            for s in data.get("data", []):
+                if s['attributes']['identifier'] == identifier:
+                    return s['attributes']['id']
+    return None
 
 # =========================
 # HELP
