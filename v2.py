@@ -628,12 +628,12 @@ class ManageServerView(discord.ui.View):
         await interaction.response.send_message("⌨️ Enter command to run.", ephemeral=True)
     
     @discord.ui.button(label="Create Backup", style=discord.ButtonStyle.success, emoji="💾")
-        async def create_backup(_, i: discord.Interaction):
-            await i.response.send_message("💾 Backup requested...", ephemeral=True)
+        async def create_backup(self, interaction, button):
+            await interaction.response.send_message("💾 Backup requested...", ephemeral=True)
 
    @discord.ui.button(label="Add Operator", style=discord.ButtonStyle.green, emoji="👑")
-        async def add_op(_, i: discord.Interaction):
-            await i.response.send_message("👑 Enter Minecraft username to OP:", ephemeral=True)
+        async def add_op(self, interaction, button):
+            await interaction.response.send_message("👑 Enter Minecraft username to OP:", ephemeral=True)
 
     @discord.ui.button(label="Status", style=discord.ButtonStyle.blurple)
     async def status(self, interaction, button):
