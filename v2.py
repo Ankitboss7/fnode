@@ -25,6 +25,7 @@ PANEL_NODE_ID = "2"  # node id to select allocations
 DEFAULT_ALLOCATION_ID = "None"
 # initial admin bootstrap (replace with your Discord ID)
 BOOTSTRAP_ADMIN_IDS = {1405866008127864852}
+DB_FILE = "manage_db.txt"
 
 # bot branding
 BOT_VERSION = "27.6v"
@@ -491,13 +492,6 @@ async def register_cmd(ctx, email: str, password: str):
 # =========================
 # Manage group (client API)
 # =========================
-import aiohttp, discord, random, os
-from discord.ext import commands
-
-bot = commands.Bot(command_prefix="*", intents=discord.Intents.all())
-
-DB_FILE = "manage_db.txt"
-
 # ---------------- Database Helpers ----------------
 def load_db():
     if not os.path.exists(DB_FILE):
