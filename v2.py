@@ -8,7 +8,7 @@ import json
 import asyncio
 import datetime
 from typing import Dict, Any, Optional, List, Tuple
-import aiohttp
+import aiohttp,random
 import discord
 from discord.ext import commands
 
@@ -351,6 +351,191 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} | Prefix {PREFIX} | Version {BOT_VERSION}")
     await bot.change_presence(activity=discord.Game(name=f"{PREFIX}help | {BOT_VERSION}"))
 
+DB_FILE = "manage_db.txt"
+# ---------------- Database Helpers ----------------
+def load_db():
+    if not os.path.exists(DB_FILE):
+        return {}
+    with open(DB_FILE, "r") as f:
+        lines = f.readlines()
+    db = {}
+    for line in lines:
+        user, mid, token = line.strip().split("|")
+        if user not in db:
+            db[user] = []
+        db[user].append({"mid": mid, "token": token})
+    return db
+
+def save_db(db):
+    with open(DB_FILE, "w") as f:
+        for user, entries in db.items():
+            for e in entries:
+                f.write(f"{user}|{e['mid']}|{e['token']}\n")
+
+def token_in_use(db, token):
+    for entries in db.values():
+        for e in entries:
+            if e["token"] == token:
+                return True
+    return False
+
+def generate_mid():
+    return f"MNG-{random.randint(10000,99999)}"
+
+# ---------------- Panel Control View ----------------
+class ManageServerView(discord.ui.View):
+    def __init__(self, token: str, serverid: str):
+        super().__init__(timeout=None)
+        self.token = token
+        self.serverid = serverid
+        self.base = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}"
+
+    async def _post_power(self, interaction: discord.Interaction, signal: str):
+        url = f"{self.base}/power"
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={"signal": signal}) as resp:
+                if resp.status == 204:
+                    await interaction.response.send_message(f"✅ `{signal}` sent.", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Failed ({resp.status})", ephemeral=True)
+
+    # -------- Power Buttons --------
+    @discord.ui.button(label="Start", style=discord.ButtonStyle.success)
+    async def start(self, interaction, button): await self._post_power(interaction, "start")
+
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger)
+    async def stop(self, interaction, button): await self._post_power(interaction, "stop")
+
+    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary)
+    async def restart(self, interaction, button): await self._post_power(interaction, "restart")
+
+    @discord.ui.button(label="Reinstall", style=discord.ButtonStyle.secondary)
+    async def reinstall(self, interaction, button): await self._post_power(interaction, "reinstall")
+
+    # -------- File Controls --------
+    @discord.ui.button(label="List Files", style=discord.ButtonStyle.blurple)
+    async def listfiles(self, interaction, button):
+        url = f"{self.base}/files/list?directory=/"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    files = [f['attributes']['name'] for f in data['data']]
+                    await interaction.response.send_message("📂 Files:\n" + "\n".join(files[:10]), ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Cannot list files ({resp.status})", ephemeral=True)
+
+    @discord.ui.button(label="Upload File", style=discord.ButtonStyle.gray)
+    async def uploadfile(self, interaction, button):
+        await interaction.response.send_message("📤 Reply with file to upload.", ephemeral=True)
+
+    @discord.ui.button(label="Delete File", style=discord.ButtonStyle.red)
+    async def deletefile(self, interaction, button):
+        await interaction.response.send_message("🗑️ Enter file path to delete.", ephemeral=True)
+
+    @discord.ui.button(label="Edit File", style=discord.ButtonStyle.green)
+    async def editfile(self, interaction, button):
+        await interaction.response.send_message("✏️ Enter file path + new content.", ephemeral=True)
+
+    # -------- Extra Controls --------
+    @discord.ui.button(label="Run CMD", style=discord.ButtonStyle.gray)
+    async def runcmd(self, interaction, button):
+        await interaction.response.send_message("⌨️ Enter command to run.", ephemeral=True)
+
+    @discord.ui.button(label="Status", style=discord.ButtonStyle.blurple)
+    async def status(self, interaction, button):
+        url = f"{self.base}/resources"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    state = data["attributes"]["current_state"]
+                    cpu = data["attributes"]["resources"]["cpu_absolute"]
+                    mem = round(data["attributes"]["resources"]["memory_bytes"] / 1024 / 1024, 2)
+                    await interaction.response.send_message(f"ℹ️ {state} | CPU: {cpu}% | RAM: {mem} MB", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Failed status ({resp.status})", ephemeral=True)
+
+    @discord.ui.button(label="Backup Create", style=discord.ButtonStyle.green)
+    async def backup(self, interaction, button):
+        url = f"{self.base}/backups"
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={"name": "AutoBackup"}) as resp:
+                if resp.status in (200, 201):
+                    await interaction.response.send_message("✅ Backup created.", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Backup failed ({resp.status})", ephemeral=True)
+
+    @discord.ui.button(label="Op Add", style=discord.ButtonStyle.success)
+    async def opadd(self, interaction, button):
+        await interaction.response.send_message("📝 Enter player name to OP:", ephemeral=True)
+
+    @discord.ui.button(label="Exit", style=discord.ButtonStyle.red)
+    async def exit(self, interaction, button):
+        await interaction.message.delete()
+        await interaction.response.send_message("❌ Closed panel.", ephemeral=True)
+
+# ---------------- Manage Command ----------------
+@bot.command(name="manage")
+async def manage(ctx, token: str = None):
+    user_id = str(ctx.author.id)
+    db = load_db()
+
+    # First time (with token)
+    if token:
+        if token_in_use(db, token):
+            return await ctx.reply("❌ This token is already linked to another account.")
+
+        await ctx.reply("⚡ Do you want to save this token? Reply with `yes` or `no`.")
+
+        def check(m): return m.author == ctx.author and m.channel == ctx.channel
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=30)
+        except:
+            return await ctx.reply("⌛ Timeout. Try again.")
+
+        if msg.content.lower() == "yes":
+            mid = generate_mid()
+            if user_id not in db: db[user_id] = []
+            db[user_id].append({"mid": mid, "token": token})
+            save_db(db)
+            await ctx.reply(f"✅ Your ManageID `{mid}` has been linked.")
+        else:
+            return await ctx.reply("❌ Token not saved.")
+
+    # Second time (without token)
+    if user_id not in db or not db[user_id]:
+        return await ctx.reply("❌ No saved tokens. Use `*manage <token>` first.")
+
+    entry = db[user_id][0]  # use first token
+    token = entry["token"]
+    mid = entry["mid"]
+
+    headers = {"Authorization": f"Bearer {token}"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://panel.fluidmc.fun/api/client", headers=headers) as resp:
+            if resp.status != 200:
+                return await ctx.reply("❌ Invalid saved token.")
+            data = await resp.json()
+
+    servers = data.get("data", [])
+    if not servers:
+        return await ctx.reply("❌ No servers found.")
+
+    for server in servers:
+        sid = server["attributes"]["identifier"]
+        name = server["attributes"]["name"]
+        embed = discord.Embed(
+            title=f"🎮 {name} ({mid})",
+            description="Use the buttons below to control your server.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed, view=ManageServerView(token, sid))
+
 # =========================
 # HELP
 # =========================
@@ -488,234 +673,6 @@ async def register_cmd(ctx, email: str, password: str):
         save_data(data)
         await ctx.reply(f"✅ Linked panel user id `{uid}` to your Discord account.")
 
-# =========================
-# Manage group (client API)
-# =========================
-import aiohttp, discord, random, os
-from discord.ext import commands
-
-bot = commands.Bot(command_prefix="*", intents=discord.Intents.all())
-
-DB_FILE = "manage_db.txt"
-
-# ---------------- Database Helpers ----------------
-def load_db():
-    if not os.path.exists(DB_FILE):
-        return {}
-    with open(DB_FILE, "r") as f:
-        lines = f.readlines()
-    db = {}
-    for line in lines:
-        user, mid, token = line.strip().split("|")
-        if user not in db:
-            db[user] = []
-        db[user].append({"mid": mid, "token": token})
-    return db
-
-def save_db(db):
-    with open(DB_FILE, "w") as f:
-        for user, entries in db.items():
-            for e in entries:
-                f.write(f"{user}|{e['mid']}|{e['token']}\n")
-
-def token_in_use(db, token):
-    for entries in db.values():
-        for e in entries:
-            if e["token"] == token:
-                return True
-    return False
-
-def generate_mid():
-    return f"MNG-{random.randint(10000,99999)}"
-
-# ---------------- Panel Control View ----------------
-class ManageServerView(discord.ui.View):
-    def __init__(self, token: str, serverid: str):
-        super().__init__(timeout=None)
-        self.token = token
-        self.serverid = serverid
-        self.base = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}"
-
-    async def _post_power(self, interaction: discord.Interaction, signal: str):
-        url = f"{self.base}/power"
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json={"signal": signal}) as resp:
-                if resp.status == 204:
-                    await interaction.response.send_message(f"✅ `{signal}` sent.", ephemeral=True)
-                else:
-                    await interaction.response.send_message(f"❌ Failed ({resp.status})", ephemeral=True)
-
-    @discord.ui.button(label="Start", style=discord.ButtonStyle.success)
-    async def start(self, interaction, button): await self._post_power(interaction, "start")
-
-    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger)
-    async def stop(self, interaction, button): await self._post_power(interaction, "stop")
-
-    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary)
-    async def restart(self, interaction, button): await self._post_power(interaction, "restart")
-
-    @discord.ui.button(label="Reinstall", style=discord.ButtonStyle.secondary)
-    async def reinstall(self, interaction, button): await self._post_power(interaction, "reinstall")
-
-    @discord.ui.button(label="List Files", style=discord.ButtonStyle.blurple)
-    async def listfiles(self, interaction, button):
-        url = f"{self.base}/files/list?directory=/"
-        headers = {"Authorization": f"Bearer {self.token}"}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    files = [f['attributes']['name'] for f in data['data']]
-                    await interaction.response.send_message("📂 Files:\n" + "\n".join(files[:10]), ephemeral=True)
-                else:
-                    await interaction.response.send_message(f"❌ Cannot list files ({resp.status})", ephemeral=True)
-
-    @discord.ui.button(label="Upload File", style=discord.ButtonStyle.gray)
-    async def uploadfile(self, interaction, button):
-        await interaction.response.send_message("📤 Reply with file to upload.", ephemeral=True)
-
-    @discord.ui.button(label="Delete File", style=discord.ButtonStyle.red)
-    async def deletefile(self, interaction, button):
-        await interaction.response.send_message("🗑️ Enter file path to delete.", ephemeral=True)
-
-    @discord.ui.button(label="Edit File", style=discord.ButtonStyle.green)
-    async def editfile(self, interaction, button):
-        await interaction.response.send_message("✏️ Enter file path + new content.", ephemeral=True)
-
-    @discord.ui.button(label="Run CMD", style=discord.ButtonStyle.gray)
-    async def runcmd(self, interaction, button):
-        await interaction.response.send_message("⌨️ Enter command to run.", ephemeral=True)
-    
-    @discord.ui.button(label="➕ Op Add (Minecraft)", style=discord.ButtonStyle.green)
-    async def op_add(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.userid:
-            return await interaction.response.send_message("❌ You are not the owner of this manage session.", ephemeral=True)
-
-        await interaction.response.send_message("🎮 Please enter your **Minecraft Server Name**:", ephemeral=True)
-
-        def check(m): 
-            return m.author == interaction.user and m.channel == interaction.channel
-
-        try:
-            msg = await bot.wait_for("message", check=check, timeout=30)
-        except:
-            return await interaction.followup.send("⌛ Timeout! Try again.", ephemeral=True)
-
-        server_name = msg.content.strip()
-
-        # Save operation in database.txt (or separate file)
-        with open("operations.txt", "a") as f:
-            f.write(f"{interaction.user.id}|{server_name}\n")
-
-        await interaction.followup.send(f"✅ Operation added: **Minecraft – {server_name}**", ephemeral=True)
-
-    @discord.ui.button(label="📦 Backup Create", style=discord.ButtonStyle.gray)
-    async def backup_create(self, interaction: discord.Interaction, button: discord.ui.Button):
-        url = f"{self.base}/backups"
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
-        payload = {"name": f"backup-{random.randint(1000,9999)}"}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status == 201:
-                    data = await resp.json()
-                    bid = data["attributes"]["uuid"]
-                    await interaction.response.send_message(f"✅ Backup Created: `{bid}`", ephemeral=True)
-                else:
-                    await interaction.response.send_message(f"❌ Backup Failed ({resp.status})", ephemeral=True)
-                    
-    @discord.ui.button(label="Status", style=discord.ButtonStyle.blurple)
-    async def status(self, interaction, button):
-        url = f"{self.base}/resources"
-        headers = {"Authorization": f"Bearer {self.token}"}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    state = data["attributes"]["current_state"]
-                    cpu = data["attributes"]["resources"]["cpu_absolute"]
-                    mem = round(data["attributes"]["resources"]["memory_bytes"] / 1024 / 1024, 2)
-                    await interaction.response.send_message(f"ℹ️ {state} | CPU: {cpu}% | RAM: {mem} MB", ephemeral=True)
-                else:
-                    await interaction.response.send_message(f"❌ Failed status ({resp.status})", ephemeral=True)
-
-    @discord.ui.button(label="Exit", style=discord.ButtonStyle.red)
-    async def exit(self, interaction, button):
-        await interaction.message.delete()
-        await interaction.response.send_message("❌ Closed panel.", ephemeral=True)
-
-# ---------------- Manage Command ----------------
-@bot.command(name="manage")
-async def manage(ctx, token: str = None):
-    user_id = str(ctx.author.id)
-    db = load_db()
-
-    # First time (with token)
-    if token:
-        if token_in_use(db, token):
-            return await ctx.reply("❌ This token is already linked to another account.")
-
-        await ctx.reply("⚡ Do you want to save this token? Reply with `yes` or `no`.")
-
-        def check(m): return m.author == ctx.author and m.channel == ctx.channel
-        try:
-            msg = await bot.wait_for("message", check=check, timeout=30)
-        except:
-            return await ctx.reply("⌛ Timeout. Try again.")
-
-        if msg.content.lower() == "yes":
-            mid = generate_mid()
-            if user_id not in db: db[user_id] = []
-            db[user_id].append({"mid": mid, "token": token})
-            save_db(db)
-            await ctx.reply(f"✅ Your ManageID `{mid}` has been linked.")
-        else:
-            return await ctx.reply("❌ Token not saved.")
-
-    # Second time (without token)
-    if user_id not in db or not db[user_id]:
-        return await ctx.reply("❌ No saved tokens. Use `*manage <token>` first.")
-
-    # For simplicity, always pick first linked token
-    entry = db[user_id][0]
-    token = entry["token"]
-    mid = entry["mid"]
-
-    # Get servers from panel
-    headers = {"Authorization": f"Bearer {token}"}
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://panel.fluidmc.fun/api/client", headers=headers) as resp:
-            if resp.status != 200:
-                return await ctx.reply("❌ Invalid saved token.")
-            data = await resp.json()
-
-    servers = data.get("data", [])
-    if not servers:
-        return await ctx.reply("❌ No servers found.")
-
-    for server in servers:
-        sid = server["attributes"]["identifier"]
-        name = server["attributes"]["name"]
-        embed = discord.Embed(
-            title=f"🎮 {name} ({mid})",
-            description="Use the buttons below to control your server.",
-            color=discord.Color.green()
-        )
-        await ctx.send(embed=embed, view=ManageServerView(token, sid))
-
-# -------------------- GET SERVER INTERNAL ID --------------------
-async def get_server_internal_id(identifier):
-    url = "https://panel.fluidmc.fun/api/application/servers"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
-            if resp.status != 200:
-                return None
-            data = await resp.json()
-            for s in data.get("data", []):
-                if s['attributes']['identifier'] == identifier:
-                    return s['attributes']['id']
-    return None
 # -------------------- ADMIN CREATE ACCOUNT --------------------
 @bot.command(name="create_ad")
 async def create_ad(ctx, email: str, password: str, is_admin: str):
