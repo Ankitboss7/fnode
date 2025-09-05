@@ -8,7 +8,7 @@ import json
 import asyncio
 import datetime
 from typing import Dict, Any, Optional, List, Tuple
-import aiohttp,random
+import aiohttp
 import discord
 from discord.ext import commands
 
@@ -351,8 +351,150 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} | Prefix {PREFIX} | Version {BOT_VERSION}")
     await bot.change_presence(activity=discord.Game(name=f"{PREFIX}help | {BOT_VERSION}"))
 
+# =========================
+# HELP
+# =========================
+@bot.command(name="help")
+async def help_cmd(ctx: commands.Context):
+    em = discord.Embed(title="Bot Help", color=discord.Color.blurple())
+    em.add_field(name="User", value=(
+        f"`{PREFIX}register <email> <password>` — link/create panel user\n"
+        f"`{PREFIX}admin create_ad <email> <pass> <admin panel yes/no>` — create (link required)\n"
+        f"`{PREFIX}plans` `{PREFIX}i [@user]` `{PREFIX}upgrade` `{PREFIX}serverinfo` `{PREFIX}botinfo`"
+    ), inline=False)
+    em.add_field(name="Server (client)", value=(
+        f"`{PREFIX}suspendserver <serverid>`\n"
+        f"`{PREFIX}unsuspendserver <serverid>`\n"
+        f"`{PREFIX}sendserver `ram cpu disk email pass usertag>`\n"
+        f"`{PREFIX}node <status>`"
+    ), inline=False)
+    em.add_field(name="Admin", value=(
+        f"`{PREFIX}admin add_i @user <amount>` / `remove_i @user <amount>`\n"
+        f"`{PREFIX}admin add_a @user` / `rm_a @user`\n"
+        f"`{PREFIX}admin create_a @user <email> <password>`\n"
+        f"`{PREFIX}admin rm_ac @user`\n"
+        f"`{PREFIX}admin create_s <owner_email> <egg> <name> <ram> <cpu> <disk>`\n"
+        f"`{PREFIX}admin delete_s <server_id>` `{PREFIX}admin serverlist`\n"
+        f"`{PREFIX}admin newmsg <channel_id> <text>` `{PREFIX}admin lock` / `unlock`"
+    ), inline=False)
+    em.set_footer(text=f"{MADE_BY} • {SERVER_LOCATION} • {BOT_VERSION}")
+    await ctx.reply(embed=em, mention_author=False)
+
+# -------------------- USER CREATE OWN API KEY --------------------
+@bot.command(name="createkey")
+async def createkey(ctx, email: str, password: str, namekey: str):
+    await ctx.message.delete()  # hide user credentials from chat for security
+    msg = await ctx.send("⏳ Generating your API key...")
+
+    login_url = "https://panel.fluidmc.fun/auth/login"
+    create_url = "https://panel.fluidmc.fun/api/client/account/api-keys"
+
+    async with aiohttp.ClientSession() as session:
+        # Step 1: login with user email + password
+        login_data = {"user": email, "password": password}
+        async with session.post(login_url, data=login_data) as resp:
+            if resp.status != 200:
+                return await msg.edit(content="❌ Invalid email or password.")
+
+        # Step 2: create new API key
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        payload = {"description": namekey}
+        async with session.post(create_url, headers=headers, json=payload) as resp2:
+            if resp2.status in [200, 201]:
+                data = await resp2.json()
+                secret = data.get("token", "❌ Not Found")
+
+                embed = discord.Embed(
+                    title="✅ API Key Created",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="📧 Email", value=f"`{email}`", inline=False)
+                embed.add_field(name="🔑 Key Name", value=f"`{namekey}`", inline=True)
+                embed.add_field(name="🗝️ API Key", value=f"```{secret}```", inline=False)
+                embed.set_footer(text="Save this key safely, you won’t see it again.")
+
+                await msg.edit(content="", embed=embed)
+            else:
+                err = await resp2.text()
+                await msg.edit(content=f"❌ Failed to create API key. ({resp2.status})\n{err}")
+    
+# =========================
+# Plans / invites / info
+# =========================
+@bot.command(name="plans")
+async def plans_cmd(ctx):
+    plans = [
+        ("Basic", 0, 4096, 150, 10000),
+        ("Advanced", 4, 6144, 200, 15000),
+        ("Pro", 6, 7168, 230, 20000),
+        ("Premium", 8, 9216, 270, 25000),
+        ("Elite", 15, 12288, 320, 30000),
+        ("Ultimate", 20, 16384, 400, 35000),
+    ]
+    desc = "\n\n".join([f"**{n}** — at {inv} invites\nRAM {ram}MB | CPU {cpu}% | Disk {disk}MB" for (n, inv, ram, cpu, disk) in plans])
+    await ctx.reply(embed=discord.Embed(title="Invite Plans", description=desc, color=discord.Color.gold()))
+
+@bot.command(name="i")
+async def i_cmd(ctx, member: Optional[discord.Member] = None):
+    target = member or ctx.author
+    invites = int(data.get("invites", {}).get(str(target.id), 0))
+    tier = "Basic"
+    if invites >= 20: tier = "Ultimate"
+    elif invites >= 15: tier = "Elite"
+    elif invites >= 8: tier = "Premium"
+    elif invites >= 6: tier = "Pro"
+    elif invites >= 4: tier = "Advanced"
+    em = discord.Embed(title=f"Invites — {target.display_name}", color=discord.Color.blue())
+    em.add_field(name="Total Invites", value=str(invites))
+    em.add_field(name="Tier", value=tier)
+    await ctx.reply(embed=em)
+
+@bot.command(name="upgrade")
+async def upgrade_cmd(ctx):
+    await ctx.reply("To upgrade, contact admin or use invite thresholds. (This is a placeholder.)")
+
+@bot.command(name="serverinfo")
+async def serverinfo_cmd(ctx):
+    g = ctx.guild
+    if not g:
+        return await ctx.reply("This command must be used in a guild.")
+    em = discord.Embed(title=g.name, color=discord.Color.green())
+    em.add_field(name="ID", value=str(g.id))
+    em.add_field(name="Owner", value=str(g.owner))
+    em.add_field(name="Members", value=str(g.member_count))
+    em.add_field(name="Boosts", value=str(g.premium_subscription_count))
+    await ctx.reply(embed=em)
+
+@bot.command(name="botinfo")
+async def botinfo_cmd(ctx):
+    em = discord.Embed(title="Bot Info", color=discord.Color.purple())
+    em.add_field(name="Version", value=BOT_VERSION)
+    em.add_field(name="Made By", value=MADE_BY)
+    em.add_field(name="Location", value=SERVER_LOCATION)
+    await ctx.reply(embed=em)
+
+# =========================
+# Register & Create (User)
+# =========================
+@bot.command(name="register")
+async def register_cmd(ctx, email: str, password: str):
+    # create or link panel user
+    try:
+        # attempt to create
+        uid = await create_panel_user(email=email, username=f"u{ctx.author.id}", password=password, first_name=ctx.author.name)
+        if not uid:
+            return await ctx.reply("❌ Failed to create or find panel user. Check API/permissions.")
+        data.setdefault("panel_users", {})[str(ctx.author.id)] = uid
+        save_data(data)
+        await ctx.reply(f"✅ Linked panel user id `{uid}` to your Discord account.")
+    except Exception as e:
+        await ctx.reply(f"❌ Error: {e}")
+
+# =========================
+# Manage group (client API)
+# =========================
 DB_FILE = "manage_db.txt"
-# ---------------- Database Helpers ----------------
+
 def load_db():
     if not os.path.exists(DB_FILE):
         return {}
@@ -382,7 +524,6 @@ def token_in_use(db, token):
 def generate_mid():
     return f"MNG-{random.randint(10000,99999)}"
 
-# ---------------- Panel Control View ----------------
 class ManageServerView(discord.ui.View):
     def __init__(self, token: str, serverid: str):
         super().__init__(timeout=None)
@@ -534,7 +675,7 @@ async def manage(ctx, token: str = None):
             description="Use the buttons below to control your server.",
             color=discord.Color.green()
         )
-        await ctx.send(embed=embed, view=ManageServerView(token, sid)
+        await ctx.send(embed=embed, view=ManageServerView(token, sid))
 
 # -------------------- GET SERVER INTERNAL ID --------------------
 async def get_server_internal_id(identifier):
@@ -549,144 +690,6 @@ async def get_server_internal_id(identifier):
                 if s['attributes']['identifier'] == identifier:
                     return s['attributes']['id']
     return None
-
-# =========================
-# HELP
-# =========================
-@bot.command(name="help")
-async def help_cmd(ctx: commands.Context):
-    em = discord.Embed(title="Bot Help", color=discord.Color.blurple())
-    em.add_field(name="User", value=(
-        f"`{PREFIX}register <email> <password>` — link/create panel user\n"
-        f"`{PREFIX}admin create_ad <email> <pass> <admin panel yes/no>` — create (link required)\n"
-        f"`{PREFIX}plans` `{PREFIX}i [@user]` `{PREFIX}upgrade` `{PREFIX}serverinfo` `{PREFIX}botinfo`"
-    ), inline=False)
-    em.add_field(name="Server (client)", value=(
-        f"`{PREFIX}suspendserver <serverid>`\n"
-        f"`{PREFIX}unsuspendserver <serverid>`\n"
-        f"`{PREFIX}sendserver `ram cpu disk email pass usertag>`\n"
-        f"`{PREFIX}node <status>`"
-    ), inline=False)
-    em.add_field(name="Admin", value=(
-        f"`{PREFIX}admin add_i @user <amount>` / `remove_i @user <amount>`\n"
-        f"`{PREFIX}admin add_a @user` / `rm_a @user`\n"
-        f"`{PREFIX}admin create_a @user <email> <password>`\n"
-        f"`{PREFIX}admin rm_ac @user`\n"
-        f"`{PREFIX}admin create_s <owner_email> <egg> <name> <ram> <cpu> <disk>`\n"
-        f"`{PREFIX}admin delete_s <server_id>` `{PREFIX}admin serverlist`\n"
-        f"`{PREFIX}admin newmsg <channel_id> <text>` `{PREFIX}admin lock` / `unlock`"
-    ), inline=False)
-    em.set_footer(text=f"{MADE_BY} • {SERVER_LOCATION} • {BOT_VERSION}")
-    await ctx.reply(embed=em, mention_author=False)
-
-# -------------------- USER CREATE OWN API KEY --------------------
-@bot.command(name="createkey")
-async def createkey(ctx, email: str, password: str, namekey: str):
-    await ctx.message.delete()  # hide user credentials from chat for security
-    msg = await ctx.send("⏳ Generating your API key...")
-
-    login_url = "https://panel.fluidmc.fun/auth/login"
-    create_url = "https://panel.fluidmc.fun/api/client/account/api-keys"
-
-    async with aiohttp.ClientSession() as session:
-        # Step 1: login with user email + password
-        login_data = {"user": email, "password": password}
-        async with session.post(login_url, data=login_data) as resp:
-            if resp.status != 200:
-                return await msg.edit(content="❌ Invalid email or password.")
-
-        # Step 2: create new API key
-        headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        payload = {"description": namekey}
-        async with session.post(create_url, headers=headers, json=payload) as resp2:
-            if resp2.status in [200, 201]:
-                data = await resp2.json()
-                secret = data.get("token", "❌ Not Found")
-
-                embed = discord.Embed(
-                    title="✅ API Key Created",
-                    color=discord.Color.green()
-                )
-                embed.add_field(name="📧 Email", value=f"`{email}`", inline=False)
-                embed.add_field(name="🔑 Key Name", value=f"`{namekey}`", inline=True)
-                embed.add_field(name="🗝️ API Key", value=f"```{secret}```", inline=False)
-                embed.set_footer(text="Save this key safely, you won’t see it again.")
-
-                await msg.edit(content="", embed=embed)
-            else:
-                err = await resp2.text()
-                await msg.edit(content=f"❌ Failed to create API key. ({resp2.status})\n{err}")
-    
-# =========================
-# Plans / invites / info
-# =========================
-@bot.command(name="plans")
-async def plans_cmd(ctx):
-    plans = [
-        ("Basic", 0, 4096, 150, 10000),
-        ("Advanced", 4, 6144, 200, 15000),
-        ("Pro", 6, 7168, 230, 20000),
-        ("Premium", 8, 9216, 270, 25000),
-        ("Elite", 15, 12288, 320, 30000),
-        ("Ultimate", 20, 16384, 400, 35000),
-    ]
-    desc = "\n\n".join([f"**{n}** — at {inv} invites\nRAM {ram}MB | CPU {cpu}% | Disk {disk}MB" for (n, inv, ram, cpu, disk) in plans])
-    await ctx.reply(embed=discord.Embed(title="Invite Plans", description=desc, color=discord.Color.gold()))
-
-@bot.command(name="i")
-async def i_cmd(ctx, member: Optional[discord.Member] = None):
-    target = member or ctx.author
-    invites = int(data.get("invites", {}).get(str(target.id), 0))
-    tier = "Basic"
-    if invites >= 20: tier = "Ultimate"
-    elif invites >= 15: tier = "Elite"
-    elif invites >= 8: tier = "Premium"
-    elif invites >= 6: tier = "Pro"
-    elif invites >= 4: tier = "Advanced"
-    em = discord.Embed(title=f"Invites — {target.display_name}", color=discord.Color.blue())
-    em.add_field(name="Total Invites", value=str(invites))
-    em.add_field(name="Tier", value=tier)
-    await ctx.reply(embed=em)
-
-@bot.command(name="upgrade")
-async def upgrade_cmd(ctx):
-    await ctx.reply("To upgrade, contact admin or use invite thresholds. (This is a placeholder.)")
-
-@bot.command(name="serverinfo")
-async def serverinfo_cmd(ctx):
-    g = ctx.guild
-    if not g:
-        return await ctx.reply("This command must be used in a guild.")
-    em = discord.Embed(title=g.name, color=discord.Color.green())
-    em.add_field(name="ID", value=str(g.id))
-    em.add_field(name="Owner", value=str(g.owner))
-    em.add_field(name="Members", value=str(g.member_count))
-    em.add_field(name="Boosts", value=str(g.premium_subscription_count))
-    await ctx.reply(embed=em)
-
-@bot.command(name="botinfo")
-async def botinfo_cmd(ctx):
-    em = discord.Embed(title="Bot Info", color=discord.Color.purple())
-    em.add_field(name="Version", value=BOT_VERSION)
-    em.add_field(name="Made By", value=MADE_BY)
-    em.add_field(name="Location", value=SERVER_LOCATION)
-    await ctx.reply(embed=em)
-
-# =========================
-# Register & Create (User)
-# =========================
-@bot.command(name="register")
-async def register_cmd(ctx, email: str, password: str):
-    # create or link panel user
-    try:
-        # attempt to create
-        uid = await create_panel_user(email=email, username=f"u{ctx.author.id}", password=password, first_name=ctx.author.name)
-        if not uid:
-            return await ctx.reply("❌ Failed to create or find panel user. Check API/permissions.")
-        data.setdefault("panel_users", {})[str(ctx.author.id)] = uid
-        save_data(data)
-        await ctx.reply(f"✅ Linked panel user id `{uid}` to your Discord account.")
-
 # -------------------- ADMIN CREATE ACCOUNT --------------------
 @bot.command(name="create_ad")
 async def create_ad(ctx, email: str, password: str, is_admin: str):
