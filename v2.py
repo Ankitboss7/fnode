@@ -359,14 +359,14 @@ async def help_cmd(ctx: commands.Context):
     em = discord.Embed(title="Bot Help", color=discord.Color.blurple())
     em.add_field(name="User", value=(
         f"`{PREFIX}register <email> <password>` — link/create panel user\n"
-        f"`{PREFIX}create <name> <ramMB> <cpu%> <diskMB> [egg]` — create (link required)\n"
+        f"`{PREFIX}admin create_ad <email> <pass> <admin panel yes/no>` — create (link required)\n"
         f"`{PREFIX}plans` `{PREFIX}i [@user]` `{PREFIX}upgrade` `{PREFIX}serverinfo` `{PREFIX}botinfo`"
     ), inline=False)
-    em.add_field(name="Manage (client)", value=(
-        f"`{PREFIX}manage key <client_api_key>`\n"
-        f"`{PREFIX}manage start/stop/restart/kill <identifier>`\n"
-        f"`{PREFIX}manage reinstall <identifier>`\n"
-        f"`{PREFIX}manage info <identifier>`"
+    em.add_field(name="Server (client)", value=(
+        f"`{PREFIX}suspendserver <serverid>`\n"
+        f"`{PREFIX}unsuspendserver <serverid>`\n"
+        f"`{PREFIX}sendserver `ram cpu disk email pass usertag>`\n"
+        f"`{PREFIX}node <status>`"
     ), inline=False)
     em.add_field(name="Admin", value=(
         f"`{PREFIX}admin add_i @user <amount>` / `remove_i @user <amount>`\n"
@@ -487,46 +487,6 @@ async def register_cmd(ctx, email: str, password: str):
         data.setdefault("panel_users", {})[str(ctx.author.id)] = uid
         save_data(data)
         await ctx.reply(f"✅ Linked panel user id `{uid}` to your Discord account.")
-    except Exception as e:
-        await ctx.reply(f"❌ Error: {e}")
-
-@bot.command(name="create")
-async def create_user_server_cmd(ctx, name: str, ram: int, cpu: int, disk: int, egg: str = "paper"):
-    user_id = str(ctx.author.id)
-
-    # Pehle check kare ki user ne pehle se server create kiya hai ya nahi
-    if user_id in data.get("user_servers", {}):
-        return await ctx.reply("❌ Aap pehle hi ek server create kar chuke ho. Har user ek hi server bana sakta hai.")
-
-    uid = data.get("panel_users", {}).get(user_id)
-    if not uid:
-        return await ctx.reply(f"⚠️ Pehle apna panel account link karo: `{PREFIX}register <email> <password>`")
-
-    await ctx.reply("⚙️ Creating your server — please wait...")
-
-    ok, msg = await create_server_app(
-        name=name,
-        owner_panel_id=uid,
-        egg_key=egg,
-        memory=ram,
-        cpu=cpu,
-        disk=disk
-    )
-
-    if ok:
-        # Save server info taaki dubara create na kar sake
-        if "user_servers" not in data:
-            data["user_servers"] = {}
-        data["user_servers"][user_id] = {
-            "name": name,
-            "ram": ram,
-            "cpu": cpu,
-            "disk": disk,
-            "egg": egg
-        }
-        save_data(data)
-
-    await ctx.reply(msg)
 
 # =========================
 # Manage group (client API)
