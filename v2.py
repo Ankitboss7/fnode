@@ -627,14 +627,43 @@ class ManageServerView(discord.ui.View):
     async def runcmd(self, interaction, button):
         await interaction.response.send_message("⌨️ Enter command to run.", ephemeral=True)
     
-    @discord.ui.button(label="Create Backup", style=discord.ButtonStyle.success, emoji="💾")
-        async def create_backup(self, interaction, button):
-            await interaction.response.send_message("💾 Backup requested...", ephemeral=True)
+    @discord.ui.button(label="➕ Op Add (Minecraft)", style=discord.ButtonStyle.green)
+    async def op_add(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.userid:
+            return await interaction.response.send_message("❌ You are not the owner of this manage session.", ephemeral=True)
 
-   @discord.ui.button(label="Add Operator", style=discord.ButtonStyle.green, emoji="👑")
-        async def add_op(self, interaction, button):
-            await interaction.response.send_message("👑 Enter Minecraft username to OP:", ephemeral=True)
+        await interaction.response.send_message("🎮 Please enter your **Minecraft Server Name**:", ephemeral=True)
 
+        def check(m): 
+            return m.author == interaction.user and m.channel == interaction.channel
+
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=30)
+        except:
+            return await interaction.followup.send("⌛ Timeout! Try again.", ephemeral=True)
+
+        server_name = msg.content.strip()
+
+        # Save operation in database.txt (or separate file)
+        with open("operations.txt", "a") as f:
+            f.write(f"{interaction.user.id}|{server_name}\n")
+
+        await interaction.followup.send(f"✅ Operation added: **Minecraft – {server_name}**", ephemeral=True)
+
+    @discord.ui.button(label="📦 Backup Create", style=discord.ButtonStyle.gray)
+    async def backup_create(self, interaction: discord.Interaction, button: discord.ui.Button):
+        url = f"{self.base}/backups"
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        payload = {"name": f"backup-{random.randint(1000,9999)}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status == 201:
+                    data = await resp.json()
+                    bid = data["attributes"]["uuid"]
+                    await interaction.response.send_message(f"✅ Backup Created: `{bid}`", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Backup Failed ({resp.status})", ephemeral=True)
+                    
     @discord.ui.button(label="Status", style=discord.ButtonStyle.blurple)
     async def status(self, interaction, button):
         url = f"{self.base}/resources"
