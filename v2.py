@@ -16,10 +16,10 @@ from discord.ext import commands
 # CONFIG (EDIT THESE)
 # =========================
 BOT_TOKEN = ""
-PANEL_URL = "https://panel.fluidmc.fun"  # no trailing slash
-PANEL_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
-API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
-APP_API_KEY = "ptla_S47faeE3JcTChMKRllMz6ekGiJQKXQ4jkoXm0Wd550M"
+PANEL_URL = "https://gp.fluidnodes.site"  # no trailing slash
+PANEL_API_KEY = ""
+API_KEY = ""
+APP_API_KEY = ""
 ADMIN_IDS = "1405866008127864852"
 PANEL_NODE_ID = "2"  # node id to select allocations
 DEFAULT_ALLOCATION_ID = "None"
@@ -28,7 +28,7 @@ BOOTSTRAP_ADMIN_IDS = {1405866008127864852}
 
 # bot branding
 BOT_VERSION = "27.6v"
-MADE_BY = "Gamerzhacker"
+MADE_BY = "PowerDev/Gamerzhacker"
 SERVER_LOCATION = "India"
 
 # data file
@@ -107,7 +107,7 @@ EGG_CATALOG: Dict[str, Dict[str, Any]] = {
     "paper": {
         "display": "Minecraft: Paper",
         "nest_id": 1,
-        "egg_id": 3,  # your Paper egg
+        "egg_id": 2,  # your Paper egg
         "docker_image": "ghcr.io/pterodactyl/yolks:java_21",
         "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}}",
         "environment": {"MINECRAFT_VERSION": "latest", "SERVER_JARFILE": "server.jar", "BUILD_NUMBER": "latest", "EULA": "TRUE"},
@@ -529,7 +529,7 @@ class ManageServerView(discord.ui.View):
         super().__init__(timeout=None)
         self.token = token
         self.serverid = serverid
-        self.base = f"https://panel.fluidmc.fun/api/client/servers/{self.serverid}"
+        self.base = f"https://gp.fluidnodes.site/api/client/servers/{self.serverid}"
 
     async def _post_power(self, interaction: discord.Interaction, signal: str):
         url = f"{self.base}/power"
@@ -658,7 +658,7 @@ async def manage(ctx, token: str = None):
 
     headers = {"Authorization": f"Bearer {token}"}
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://panel.fluidmc.fun/api/client", headers=headers) as resp:
+        async with session.get("https://gp.fluidnodes.site/api/client", headers=headers) as resp:
             if resp.status != 200:
                 return await ctx.reply("❌ Invalid saved token.")
             data = await resp.json()
@@ -679,7 +679,7 @@ async def manage(ctx, token: str = None):
 
 # -------------------- GET SERVER INTERNAL ID --------------------
 async def get_server_internal_id(identifier):
-    url = "https://panel.fluidmc.fun/api/application/servers"
+    url = "https://gp.fluidnodes.site/api/application/servers"
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
