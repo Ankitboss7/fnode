@@ -352,6 +352,150 @@ async def on_ready():
     await bot.change_presence(activity=discord.Game(name=f"{PREFIX}help | {BOT_VERSION}"))
 
 # =========================
+# NodeStatus
+# =========================
+class NodeStatus(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.session = aiohttp.ClientSession()
+
+    async def cog_unload(self):
+        await self.session.close()
+
+    async def get_github_status(self):
+        """Fetch GitHub system status"""
+        try:
+            async with self.session.get("https://www.githubstatus.com/api/v2/summary.json", timeout=10) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    desc = data.get("status", {}).get("description", "Unknown")
+                    incidents = data.get("incidents", [])
+                    active = [i for i in incidents if i.get("status") != "resolved"]
+                    if active:
+                        return f"🟠 {desc} ({len(active)} active incidents)"
+                    return f"🟢 {desc}"
+                else:
+                    return f"⚠️ GitHub API Error ({r.status})"
+        except Exception as e:
+            return f"❌ GitHub status failed: {e}"
+
+    async def get_nodes(self):
+        """Fetch all nodes from panel"""
+        url = f"{PANEL_URL}/api/application/nodes"
+        try:
+            async with self.session.get(url, headers=HEADERS, timeout=20) as resp:
+                if resp.status != 200:
+                    return None, f"❌ API Error {resp.status}"
+                data = await resp.json()
+                return data.get("data", []), None
+        except Exception as e:
+            return None, f"❌ Failed to fetch nodes: {e}"
+
+    async def get_server_count(self):
+        """Count total servers and group by node"""
+        url = f"{PANEL_URL}/api/application/servers"
+        counts = {}
+        try:
+            async with self.session.get(url, headers=HEADERS, timeout=20) as resp:
+                if resp.status != 200:
+                    return counts
+                data = await resp.json()
+                for srv in data.get("data", []):
+                    attrs = srv.get("attributes", {})
+                    nid = attrs.get("node")
+                    counts[nid] = counts.get(nid, 0) + 1
+        except Exception:
+            pass
+        return counts
+
+    async def check_daemon(self, fqdn, scheme):
+        """Ping node daemon to see if online"""
+        url = f"{scheme}://{fqdn}/api/health"
+        try:
+            async with self.session.get(url, timeout=5) as resp:
+                if resp.status == 200:
+                    return "🟢 Online"
+                return "🔴 Offline"
+        except Exception:
+            return "🔴 Offline"
+
+    @app_commands.command(name="nodestatus", description="Show all Pterodactyl node/server status + GitHub system status")
+    @app_commands.choices(visibility=[
+        app_commands.Choice(name="Public", value="public"),
+        app_commands.Choice(name="Admin Only", value="admin"),
+    ])
+    async def nodestatus(self, interaction: discord.Interaction, visibility: app_commands.Choice[str]):
+        is_admin = visibility.value == "admin"
+        await interaction.response.defer(thinking=True, ephemeral=is_admin)
+
+        # Admin restriction
+        if is_admin and interaction.user.id not in ADMIN_IDS:
+            await interaction.followup.send("❌ You are not allowed to use admin visibility.", ephemeral=True)
+            return
+
+        # Fetch data
+        nodes, err = await self.get_nodes()
+        if err:
+            await interaction.followup.send(err, ephemeral=is_admin)
+            return
+
+        if not nodes:
+            await interaction.followup.send("⚠️ No nodes found on your panel.", ephemeral=is_admin)
+            return
+
+        github_status = await self.get_github_status()
+        server_counts = await self.get_server_count()
+
+        embed = discord.Embed(
+            title="🖥️ Pterodactyl Node Status",
+            description=f"Panel: {PANEL_URL}\n\n🌐 **GitHub:** {github_status}",
+            color=discord.Color.blurple()
+        )
+
+        # Check nodes concurrently
+        tasks = []
+        for n in nodes:
+            attrs = n.get("attributes", {})
+            fqdn = attrs.get("fqdn", "")
+            scheme = attrs.get("scheme", "http")
+            tasks.append(self.check_daemon(fqdn, scheme))
+        statuses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, n in enumerate(nodes):
+            attrs = n.get("attributes", {})
+            nid = attrs.get("id")
+            name = attrs.get("name", "Unknown")
+            fqdn = attrs.get("fqdn", "Unknown")
+            location = attrs.get("location_id", "N/A")
+            memory = attrs.get("memory", "N/A")
+            disk = attrs.get("disk", "N/A")
+            scheme = attrs.get("scheme", "N/A")
+            maint = "🟠 Maintenance" if attrs.get("maintenance_mode", False) else "🟢 Active"
+            status = statuses[i] if isinstance(statuses[i], str) else "🔴 Offline"
+            count = server_counts.get(nid, 0)
+
+            embed.add_field(
+                name=f"{i+1}. {name}",
+                value=(
+                    f"**FQDN:** `{fqdn}`\n"
+                    f"**Status:** {status}\n"
+                    f"**Servers on Node:** `{count}`\n"
+                    f"**Location ID:** `{location}`\n"
+                    f"**Memory:** `{memory}` MB\n"
+                    f"**Disk:** `{disk}` MB\n"
+                    f"**Scheme:** `{scheme}`\n"
+                    f"**Mode:** {maint}"
+                ),
+                inline=False
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=is_admin)
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(NodeStatus(bot))
+    
+# =========================
 # HELP
 # =========================
 @bot.command(name="help")
